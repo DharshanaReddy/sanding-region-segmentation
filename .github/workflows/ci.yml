@@ -1,0 +1,22 @@
+name: CI
+
+# CPU-only, no GPU and no Blender install. Every phase of this project must
+# expose a fast smoke test that runs here, driven by fakes/fixtures instead
+# of the real heavy dependency (BlenderProc, a CUDA GPU, ROS2, ...). Phases
+# get their own job appended here as they land.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  data-gen-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff check data_gen/ tests/
+      - run: pytest tests/ -v

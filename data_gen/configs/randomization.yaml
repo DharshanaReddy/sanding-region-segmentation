@@ -1,0 +1,48 @@
+# Domain-randomization ranges for synthetic panel defect rendering.
+# Every field here is sampled per-image by data_gen/randomization.py.
+# Keep ranges here (not hardcoded in Python) so a non-engineer can tune
+# the dataset distribution without touching rendering code.
+
+seed: 42
+image_size: 512
+
+panel:
+  base_color_rgb: # sampled uniformly per-channel within these min/max
+    min: [0.35, 0.35, 0.37]
+    max: [0.75, 0.75, 0.78]
+  roughness: { min: 0.15, max: 0.6 }
+  metallic: { min: 0.6, max: 1.0 }
+  curvature_radius_m: { min: 0.8, max: 3.0 } # cylindrical panel curvature
+
+defects:
+  count: { min: 1, max: 5 }
+  kinds: ["scratch", "corrosion", "paint_chip"]
+  size_uv: { min: 0.02, max: 0.12 } # patch size as a fraction of panel UV space
+  opacity: { min: 0.5, max: 1.0 }
+
+lighting:
+  # 70% HDRI environment lighting, 30% synthetic point/area lights
+  hdri_probability: 0.7
+  point_light_count: { min: 1, max: 3 }
+  energy_watts: { min: 200, max: 1200 }
+  color_temp_kelvin: { min: 3000, max: 6500 }
+
+camera:
+  distance_m: { min: 0.4, max: 1.2 }
+  elevation_deg: { min: -25, max: 60 }
+  azimuth_deg: { min: 0, max: 360 }
+  focal_length_mm: { min: 24, max: 50 }
+
+effects:
+  glare_probability: 0.25
+  glare_strength: { min: 0.1, max: 0.6 }
+  motion_blur_probability: 0.15
+  motion_blur_strength: { min: 0.1, max: 0.4 }
+  sensor_noise_std: { min: 0.0, max: 0.03 }
+  background_clutter_probability: 0.4
+  background_clutter_count: { min: 1, max: 4 }
+
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1

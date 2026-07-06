@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Data / artifacts (large, regenerable — never commit)
+data_gen/output/
+data_gen/blender_cache/
+*.hdf5
+*.exr
+training/runs/
+training/checkpoints/
+*.pt
+*.onnx
+*.xml
+*.bin
+*.engine
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# ROS2 build artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Keep smoke-test fixtures despite the patterns above
+!tests/fixtures/**
