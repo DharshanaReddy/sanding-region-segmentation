@@ -31,6 +31,12 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# Your real photos/masks are yours, not the repo's — keep the placeholder READMEs only.
+evaluation/real_photos/*
+evaluation/real_masks/*
+!evaluation/real_photos/README.md
+!evaluation/real_masks/README.md
+
 # OS / editor
 .DS_Store
 .vscode/
