@@ -29,6 +29,11 @@ optimize = [
     "psutil>=5.9",
     "matplotlib>=3.8",
 ]
+eval = [
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+    "jupyter>=1.0",
+]
 dev = [
     "pytest>=7.4",
     "ruff>=0.4",

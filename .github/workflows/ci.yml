@@ -54,3 +54,14 @@ jobs:
       # mask_postprocess node) actually compiles, which was never verified
       # locally (see sim/README.md's Known limitations).
       - run: docker build -f sim/Dockerfile -t sanding-ros2:ci .
+
+  evaluation-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev,train,optimize,eval]"
+      - run: ruff check evaluation/ tests/test_sim_to_real_smoke.py
+      - run: pytest tests/test_sim_to_real_smoke.py -v
