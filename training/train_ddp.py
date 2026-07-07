@@ -133,12 +133,20 @@ def main() -> None:
         dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.AVG)
 
         if rank == 0:
-            model.eval()
+            # Call model.module (the plain nn.Module), NOT the DDP wrapper,
+            # here. DDP.forward() does a collective buffer broadcast every
+            # call (broadcast_buffers=True by default) — since validation
+            # only runs on rank 0, calling the wrapped model() would make
+            # rank 0 wait on a collective the other ranks never join,
+            # deadlocking until the NCCL/gloo timeout. model.module has no
+            # such synchronization, which is correct here anyway since
+            # validation needs no gradient/buffer sync at all.
+            model.module.eval()
             val_tracker = ConfusionMatrixTracker(NUM_CLASSES)
             with torch.no_grad():
                 for images, masks in val_loader:
                     images, masks = images.to(device), masks.to(device)
-                    logits = model(images)
+                    logits = model.module(images)
                     val_tracker.update(logits.argmax(dim=1), masks)
             val_miou = val_tracker.mean_iou()
 
