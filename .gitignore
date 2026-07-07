@@ -15,9 +15,11 @@ training/runs/
 training/checkpoints/
 *.pt
 *.onnx
+*.data
 *.xml
 *.bin
 *.engine
+optimization/exported/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
