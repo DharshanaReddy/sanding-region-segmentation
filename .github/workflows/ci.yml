@@ -18,5 +18,18 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev]"
-      - run: ruff check data_gen/ tests/
-      - run: pytest tests/ -v
+      - run: ruff check data_gen/ tests/test_randomization.py tests/test_generate_dataset_smoke.py
+      - run: pytest tests/test_randomization.py tests/test_generate_dataset_smoke.py -v
+
+  training-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev,train]"
+      - run: ruff check training/ tests/test_training_smoke.py
+      # Linux runners have a libuv-enabled torch build, so the DDP smoke
+      # test (skipped on Windows dev machines) actually runs here.
+      - run: pytest tests/test_training_smoke.py -v

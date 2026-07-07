@@ -45,7 +45,11 @@ exclude = ["ros2_ws", "sim", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B"]
-ignore = ["E501"]
+# E501: line length handled by formatter, not worth erroring on.
+# N812/N817: `import torch.nn.functional as F` and `as DDP` are universal
+# PyTorch conventions — renaming them would hurt readability for this
+# codebase's actual audience more than it helps naming consistency.
+ignore = ["E501", "N812", "N817"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
