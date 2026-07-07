@@ -29,10 +29,10 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev,train]"
-      - run: ruff check training/ tests/test_training_smoke.py
+      - run: ruff check training/ tests/test_training_smoke.py tests/test_dataset_preprocessing.py
       # Linux runners have a libuv-enabled torch build, so the DDP smoke
       # test (skipped on Windows dev machines) actually runs here.
-      - run: pytest tests/test_training_smoke.py -v
+      - run: pytest tests/test_training_smoke.py tests/test_dataset_preprocessing.py -v
 
   optimization-smoke:
     runs-on: ubuntu-latest
@@ -44,3 +44,13 @@ jobs:
       - run: pip install -e ".[dev,train,optimize]"
       - run: ruff check optimization/ tests/test_optimization_smoke.py
       - run: pytest tests/test_optimization_smoke.py -v
+
+  ros2-docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # This doesn't run the simulation (no display, no GPU on this runner) —
+      # it only proves the colcon build (segmentation_node + the C++
+      # mask_postprocess node) actually compiles, which was never verified
+      # locally (see sim/README.md's Known limitations).
+      - run: docker build -f sim/Dockerfile -t sanding-ros2:ci .

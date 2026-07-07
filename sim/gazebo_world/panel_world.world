@@ -1,0 +1,97 @@
+<?xml version="1.0" ?>
+<!--
+  Minimal Gazebo Classic world: a ground plane, a sun, a panel with a few
+  visual-only "defect" patches (untextured — this is a stand-in for the
+  data_gen-rendered panel, not a substitute for it; see sim/README.md), and
+  a fixed camera publishing to /camera/image_raw for segmentation_node to
+  consume. update_rate=15 matches the "~15 Hz" camera rate called for in
+  the project brief.
+-->
+<sdf version="1.7">
+  <world name="panel_world">
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <model name="panel">
+      <static>true</static>
+      <pose>1 0 0.5 0 1.5708 0</pose>
+      <link name="panel_link">
+        <collision name="collision">
+          <geometry>
+            <box><size>1.0 1.0 0.02</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>1.0 1.0 0.02</size></box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.63 1</ambient>
+            <diffuse>0.6 0.6 0.63 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- Visual-only defect patches: darker boxes slightly proud of the
+             panel surface, standing in for scratches/corrosion/paint chips. -->
+        <visual name="defect_patch_1">
+          <pose>0.15 0.1 0.011 0 0 0</pose>
+          <geometry>
+            <box><size>0.08 0.03 0.001</size></box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.2 0.2 1</ambient>
+            <diffuse>0.2 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+        <visual name="defect_patch_2">
+          <pose>-0.2 -0.15 0.011 0 0 0.4</pose>
+          <geometry>
+            <cylinder><radius>0.04</radius><length>0.001</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.25 0.2 0.15 1</ambient>
+            <diffuse>0.25 0.2 0.15 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="fixed_camera">
+      <static>true</static>
+      <pose>0 0 0.5 0 0 0</pose>
+      <link name="camera_link">
+        <sensor name="camera" type="camera">
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image>
+              <width>512</width>
+              <height>512</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.05</near>
+              <far>10</far>
+            </clip>
+          </camera>
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <visualize>true</visualize>
+          <plugin name="camera_plugin" filename="libgazebo_ros_camera.so">
+            <ros>
+              <namespace>/</namespace>
+              <remapping>image_raw:=camera/image_raw</remapping>
+              <remapping>camera_info:=camera/camera_info</remapping>
+            </ros>
+            <camera_name>camera</camera_name>
+            <frame_name>camera_link</frame_name>
+            <update_rate>15</update_rate>
+          </plugin>
+        </sensor>
+      </link>
+    </model>
+  </world>
+</sdf>

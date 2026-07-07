@@ -27,6 +27,24 @@ _IMAGENET_STD = [0.229, 0.224, 0.225]
 NUM_CLASSES = 3  # background, panel, defect — see data_gen/renderer.py
 
 
+def preprocess_rgb_array(rgb: np.ndarray, image_size: int) -> np.ndarray:
+    """rgb: HxWx3 uint8 (e.g. a live camera frame). Returns (1, 3, H, W)
+    float32, ImageNet-normalized identically to `SegmentationDataset` above.
+
+    Exists so the ROS2 segmentation node (which gets raw camera arrays via
+    cv_bridge, not PIL images from disk) preprocesses frames exactly the way
+    training images were preprocessed, without pulling in torch/torchvision
+    just for a mean/std subtraction — this is pure numpy/PIL.
+    """
+    image = Image.fromarray(rgb).resize((image_size, image_size), Image.BILINEAR)
+    arr = np.asarray(image, dtype=np.float32) / 255.0
+    mean = np.array(_IMAGENET_MEAN, dtype=np.float32)
+    std = np.array(_IMAGENET_STD, dtype=np.float32)
+    arr = (arr - mean) / std
+    arr = arr.transpose(2, 0, 1)[np.newaxis, ...]  # HWC -> NCHW, add batch dim
+    return np.ascontiguousarray(arr, dtype=np.float32)
+
+
 class SegmentationDataset(Dataset):
     def __init__(self, data_dir: str | Path, split: str, image_size: int = 512, augment: bool = False):
         """`split` must be one of "train" / "val" / "test", matching splits.json."""

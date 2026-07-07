@@ -14,12 +14,14 @@ data_gen/blender_cache/
 training/runs/
 training/checkpoints/
 *.pt
-*.onnx
-*.data
-*.xml
-*.bin
-*.engine
+# Exported/quantized models (ONNX/.data/OpenVINO IR/TensorRT engine) all land
+# here — scoped to this directory rather than blanket *.onnx/*.xml/etc.
+# extension rules, which would otherwise also match legitimate files
+# elsewhere in the repo (e.g. ROS2 package.xml).
 optimization/exported/
+# onnxruntime's quant_pre_process (shape inference) writes this to the
+# current working directory regardless of where the model output goes.
+sym_shape_infer_temp.onnx
 
 # Notebook checkpoints
 .ipynb_checkpoints/

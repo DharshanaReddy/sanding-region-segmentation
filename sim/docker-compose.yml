@@ -1,0 +1,59 @@
+# One-command bring-up: Gazebo (headless gzserver + the panel world) +
+# segmentation_node + rviz2, all sharing the same image so there's no
+# version drift between what generates the camera feed and what consumes it.
+#
+# network_mode: host is used deliberately (rather than a bridge network)
+# because ROS2's default DDS discovery relies on UDP multicast, which is
+# fragile across Docker's bridge networking — host networking is the
+# standard workaround for multi-container ROS2 setups and keeps this file
+# simple instead of hand-rolling a Fast-DDS discovery config.
+#
+# See ../sim/README.md for X11/WSLg display setup (needed for gzclient/rviz2
+# GUI windows) on Linux/Windows/Mac.
+services:
+  gazebo:
+    build:
+      context: ..
+      dockerfile: sim/Dockerfile
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: >
+      ros2 launch gazebo_ros gazebo.launch.py
+      world:=/workspace/sim/gazebo_world/panel_world.world
+
+  segmentation_node:
+    build:
+      context: ..
+      dockerfile: sim/Dockerfile
+    network_mode: host
+    depends_on:
+      - gazebo
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      # Mount your exported model(s) from optimization/exported/ (Phase 3)
+      # so the container doesn't need its own copy baked into the image.
+      - ../optimization/exported:/models:ro
+    command: >
+      ros2 launch segmentation_node segmentation.launch.py
+      model_path:=/models/deeplabv3_mobilenet_int8_static.onnx
+      backend:=onnxruntime
+
+  rviz2:
+    build:
+      context: ..
+      dockerfile: sim/Dockerfile
+    network_mode: host
+    depends_on:
+      - segmentation_node
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: >
+      rviz2 -d /workspace/ros2_ws/src/segmentation_node/rviz/segmentation.rviz
