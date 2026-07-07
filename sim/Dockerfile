@@ -26,9 +26,17 @@ COPY data_gen ./data_gen
 COPY training ./training
 COPY optimization ./optimization
 
-# Only what the ROS2 nodes actually import at runtime — full BlenderProc/DDP
-# training deps aren't needed inside this container and would bloat the image.
-RUN pip3 install --no-cache-dir -e ".[optimize]"
+# Not editable (-e): the code is already fully copied into the image, and
+# this base image's pip/setuptools is too old to support PEP 660 editable
+# installs (fails with "build backend is missing the 'build_editable' hook").
+#
+# Needs the `train` extra too, not just `optimize`: segmentation_node.py
+# imports from optimization.benchmark and training.dataset, both of which
+# import torch/torchvision unconditionally at module level (torch backs
+# PyTorchBackend and a couple of tensor ops even though the ROS2 node itself
+# only ever instantiates the ONNX Runtime / OpenVINO backends). data_gen's
+# BlenderProc dependency is the only thing genuinely unneeded at runtime here.
+RUN pip3 install --no-cache-dir ".[train,optimize]"
 
 COPY ros2_ws ./ros2_ws
 RUN source /opt/ros/humble/setup.bash && \
