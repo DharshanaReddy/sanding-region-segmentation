@@ -50,7 +50,7 @@ so every stage is independently verifiable without a GPU:
 
 | Phase | What it does | Verified how |
 |---|---|---|
-| [`data_gen/`](data_gen/) | BlenderProc synthetic panel-defect dataset, domain randomization, pixel-perfect masks via two-pass rendering | CPU smoke tests (`FakeRenderer`, no Blender needed) — real BlenderProc path untested, see [Limitations](#limitations--honest-gaps) |
+| [`data_gen/`](data_gen/) | BlenderProc synthetic panel-defect dataset, domain randomization, pixel-perfect masks via two-pass rendering | CPU smoke tests (`FakeRenderer`) **and** verified against real Blender 4.2.1 — found and fixed 6 real bugs, then numerically confirmed mask/RGB pixel alignment on an actual render (see `data_gen/README.md`). Only a couple of preview images rendered, not the full dataset. |
 | [`training/`](training/) | DeepLabV3-MobileNetV3 + from-scratch U-Net, single-GPU and 2-GPU DDP | Real forward/backward passes + short CPU training runs; DDP data sharding and gradient sync verified directly (see commit history for a real deadlock bug found and fixed via CI) |
 | [`optimization/`](optimization/) | ONNX export, ORT INT8 (dynamic+static), OpenVINO FP16/INT8, TensorRT FP16/INT8 (Colab), unified benchmark harness | Full chain (train → export → quantize → convert → benchmark) run end-to-end locally; TensorRT notebook untested (no local GPU) |
 | [`ros2_ws/`](ros2_ws/) + [`sim/`](sim/) | rclpy inference node + rclcpp noise-filtering node, Gazebo world, one-command `docker compose up` | CI runs a real `docker build` (colcon build, including the C++ node) on every push; the simulation itself (Gazebo/rviz2 GUI) untested — no display/GPU in CI or dev environment |
@@ -69,9 +69,9 @@ Then, per phase (see each folder's README for full detail):
 
 ```bash
 # 1. Generate synthetic data (BlenderProc, CPU, run this yourself — expect hours for a full 2-3k image dataset)
-pip install -e ".[datagen]"
-python -m data_gen.generate_dataset --preview 20   # sanity check first
-python -m data_gen.generate_dataset --num-images 2500 --resume
+pip install -e ".[datagen]" && blenderproc pip install jsonlines
+blenderproc run data_gen/blenderproc_entrypoint.py --renderer blenderproc --preview 5   # sanity check first
+blenderproc run data_gen/blenderproc_entrypoint.py --renderer blenderproc --num-images 2500 --resume
 
 # 2. Train (Colab free T4, or Kaggle free 2x T4 for DDP)
 pip install -e ".[train]"
@@ -118,12 +118,16 @@ so several things are verified only up to the point that hardware allowed,
 not end-to-end. Rather than hide that, here's exactly what's real and what
 isn't:
 
-- **No full BlenderProc render has been run.** `data_gen/scene_builder.py`
-  is written against the documented BlenderProc 2.x API and its
-  defect-placement/randomization logic is unit-tested via a `FakeRenderer`
-  stand-in, but the actual Blender scene construction (materials, two-pass
-  rendering, lighting) has not executed against real Blender. Run
-  `--preview 5` first and expect to debug API specifics.
+- **BlenderProc has been verified against real Blender, but only at small
+  scale.** A couple of preview images were actually rendered with Blender
+  4.2.1 — not just written against the documented API — which surfaced and
+  fixed 6 real bugs (wrong enum strings, a broken RGBA conversion, a
+  material API misuse, a `bproc.init()` lifecycle bug, and an emission
+  texture too dim to survive tone-mapping; see `data_gen/README.md` for the
+  full list). Mask/RGB pixel alignment was confirmed numerically on the
+  fixed render. What's still unverified: a full 2,000-3,000 image dataset
+  run, and most of the domain-randomization space (HDRI lighting, extreme
+  angles, glare) at scale.
 - **No real GPU training has happened.** Both models are verified with
   real forward/backward passes and a couple of CPU epochs on a
   16-image toy dataset (see `tests/test_training_smoke.py`) — loss

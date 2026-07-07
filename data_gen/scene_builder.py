@@ -44,10 +44,19 @@ class BlenderProcRenderer:
         # — point this at a local cache dir so repeated runs don't re-download.
         self.hdri_dir = hdri_dir
 
+        import blenderproc as bproc  # noqa: PLC0415 - intentionally lazy, see module docstring
+
+        # bproc.init() sets up the single Blender session for this whole
+        # process and must only be called once, ever — calling it again per
+        # image (as this used to do) raises "BlenderProc has already been
+        # initialized". Between images, render() calls bproc.clean_up()
+        # instead, which resets the scene without tearing down the session.
+        bproc.init()
+
     def render(self, params: RandomizationParams, image_path: Path, mask_path: Path) -> None:
         import blenderproc as bproc  # noqa: PLC0415 - intentionally lazy, see module docstring
 
-        bproc.init()
+        bproc.clean_up()
         panel = self._build_curved_panel(bproc, params)
         self._position_camera(bproc, params)
         color_tex, mask_tex = bake_panel_textures(params)
@@ -112,7 +121,7 @@ class BlenderProcRenderer:
         bproc.camera.set_intrinsics_from_blender_params(
             lens=params.camera_focal_length_mm, lens_unit="MILLIMETERS"
         )
-        bproc.renderer.set_output_format(view_transform="STANDARD")
+        bproc.renderer.set_output_format(view_transform="Standard")
         bproc.camera.set_resolution(params.image_size, params.image_size)
 
     # -- materials ------------------------------------------------------------
@@ -124,8 +133,31 @@ class BlenderProcRenderer:
         panel.replace_materials(mat)
 
     def _apply_emission_mask_material(self, bproc, panel, mask_tex: np.ndarray) -> None:
+        # `Material.make_emissive()` only accepts a flat RGBA color, not an
+        # image texture, for `emission_color`. Blender 4.x's Principled BSDF
+        # has Emission Color/Strength sockets built in, and
+        # set_principled_shader_value already knows how to wire a
+        # bpy.types.Image into any socket (used above for Base Color) — so
+        # driving emission through the same path avoids needing to build the
+        # emission shader's node graph by hand.
+        from data_gen.renderer import CLASS_DEFECT, CLASS_PANEL
+
+        # mask_tex holds raw class indices (1=panel, 2=defect) — fine as a
+        # direct label array for FakeRenderer, but as an actual emission
+        # texture those values (~1/255, ~2/255) are indistinguishable from
+        # black after Blender's tone-mapping and 8-bit quantization. Remap
+        # to high-contrast bright values purely for the render; the panel
+        # class must stay clearly below the defect class so _save_outputs'
+        # thresholding (mask>10 -> PANEL, mask>200 -> DEFECT) can tell them
+        # apart in the rendered (not raw) pixel values.
+        bright_mask = np.zeros_like(mask_tex)
+        bright_mask[mask_tex == CLASS_PANEL] = 128
+        bright_mask[mask_tex == CLASS_DEFECT] = 255
+
         mat = bproc.material.create("panel_mask_emission")
-        mat.make_emissive(emission_strength=1.0, emission_color=self._to_blender_image(mask_tex))
+        mat.set_principled_shader_value("Base Color", (0.0, 0.0, 0.0, 1.0))  # no diffuse contribution
+        mat.set_principled_shader_value("Emission Strength", 1.0)
+        mat.set_principled_shader_value("Emission Color", self._to_blender_image(bright_mask))
         panel.replace_materials(mat)
 
     @staticmethod
@@ -136,9 +168,16 @@ class BlenderProcRenderer:
 
         h, w = arr.shape[:2]
         img = bpy.data.images.new("baked_tex", width=w, height=h)
-        rgba = np.dstack([arr, np.full(arr.shape[:2], 255, dtype=np.uint8)]) if arr.ndim == 2 else arr
-        if rgba.shape[-1] == 3:
-            rgba = np.dstack([rgba, np.full(arr.shape[:2], 255, dtype=np.uint8)])
+        alpha = np.full(arr.shape[:2], 255, dtype=np.uint8)
+        if arr.ndim == 2:
+            # Single-channel (e.g. the mask texture): broadcast to grayscale
+            # RGB before appending alpha, not a 2-channel [gray, alpha] array
+            # — Blender's Image.pixels always expects exactly 4 channels.
+            rgba = np.dstack([arr, arr, arr, alpha])
+        elif arr.shape[-1] == 3:
+            rgba = np.dstack([arr, alpha])
+        else:
+            rgba = arr
         img.pixels = (rgba.astype(np.float32) / 255.0).flatten().tolist()
         img.pack()
         return img
