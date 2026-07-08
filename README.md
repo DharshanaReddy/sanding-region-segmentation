@@ -16,7 +16,7 @@ flowchart LR
         A[BlenderProc<br/>domain randomization] --> B[images + pixel-perfect masks<br/>+ metadata.jsonl]
     end
     subgraph Phase2["training"]
-        C[DeepLabV3 / U-Net<br/>MobileNetV3] 
+        C[DeepLabV3 / U-Net<br/>MobileNetV3]
         D["train.py (1x GPU)"]
         E["train_ddp.py (2x GPU)"]
     end
@@ -30,17 +30,19 @@ flowchart LR
         K --> L[rviz2]
     end
     subgraph Phase5["evaluation"]
-        M[sim_to_real_gap.py] 
+        R[real photos] -.-> M[sim_to_real_gap.py]
         N[error_analysis.ipynb]
     end
 
+    C --> D
+    C --> E
     B --> D
     B --> E
     D --> F
     E --> F
-    H --> J
+    G --> J
     B -.metadata.jsonl.-> N
-    G -.real photos.-> M
+    G -.trained model.-> M
 ```
 
 ## Status
