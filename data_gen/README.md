@@ -65,8 +65,10 @@ python -m data_gen.generate_dataset --renderer fake --num-images 20 --output /tm
 
 `scene_builder.py`'s real BlenderProc rendering path **has been verified
 end-to-end** against actual Blender 4.2.1 — not just written against the
-documented API. Five real bugs were found and fixed in the process (see
-commit history for the fix-by-fix breakdown), all now working:
+documented API. Nine real bugs were found and fixed across several rounds
+of actually rendering images and checking the output pixel-by-pixel (not
+just "it ran without crashing" — several of these produced images that
+looked plausible at a glance but were wrong under inspection):
 
 1. `blenderproc run` needs a dedicated entrypoint with `import blenderproc`
    as the literal first non-comment line (not even a module docstring is
@@ -88,20 +90,49 @@ commit history for the fix-by-fix breakdown), all now working:
    collapse to near-black after tone-mapping/8-bit quantization. Fixed by
    remapping to high-contrast values (128/255) purely for the render, while
    keeping the saved PNG's actual class indices unchanged.
+7. **Found by rendering 16 images instead of 2**: `render()`'s output
+   registration (`bproc.renderer.render()`'s key+path bookkeeping) is
+   *global* and never cleared by `bproc.clean_up()` — it persists across
+   the whole script run. Two `render()` calls per image with the same
+   default `file_prefix`/`output_key` collide (masks sometimes returned
+   stale beauty-pass pixel data); giving each call a unique prefix/key
+   avoided the collision but caused registrations to *pile up* across
+   images, and once enough had accumulated Blender tried to render every
+   registered output in one pass and crashed with `FileNotFoundError`.
+   Fixed by explicitly resetting BlenderProc's global output registry
+   before every single `render()` call.
+8. **Found by visually inspecting a mask overlay, not just checking
+   defect-pixel counts**: the label pass's material never zeroed out its
+   specular response, and the lights from the beauty pass are still in the
+   scene during the label pass (`clean_up()` runs once per *image*, not
+   between the two passes). A pure-black material still shows a bright
+   specular highlight under those lights — producing a smooth, dome-shaped
+   bright region that the brightness threshold misclassified as `DEFECT`.
+   Fixed by zeroing `Specular IOR Level` and maxing `Roughness` on the label
+   material.
+9. Background clutter objects (scene dressing, not the panel) kept their
+   default material during the label pass too, so they showed the same
+   specular-highlight problem — a clutter cube would show up partially
+   colored `DEFECT` in the mask. Fixed by hiding clutter objects
+   (`hide_render = True`) before the label pass renders, since they're
+   irrelevant to the label pass entirely.
 
-After all six fixes, a real preview render was numerically verified:
-defect-mask pixel locations line up exactly with the visibly darker defect
-regions in the corresponding RGB image (mean RGB ~19 at defect pixels vs.
-~47 at panel-only pixels), confirming the two-pass pixel-perfect alignment
-technique actually works, not just that it compiles.
+After all nine fixes, a batch of 16 preview renders was checked
+comprehensively, not just spot-checked: per-image defect pixel fractions
+compared against a rough expected upper bound from each image's actual
+`defect_patches` sizes in `metadata.jsonl`, and visual overlays confirmed
+mask shapes are compact, correctly-shaped regions (ellipses, rotated
+rectangles) matching the procedural patch kinds — not the large, wrongly-shaped
+blobs earlier bugs produced. Four verified-correct examples are committed at
+`results/samples/` and shown near the top of the top-level README.
 
 Still not fully explored:
-- Only rendered a couple of preview images (CPU, ~2-12s each) — never a
-  full 2,000-3,000 image dataset. Domain randomization edge cases (HDRI
-  lighting, extreme camera angles, glare) are untested at scale.
+- Only rendered small batches (16 images at a time, CPU, ~2-12s each) — never
+  a full 2,000-3,000 image dataset. Domain randomization edge cases at the
+  extremes (very low light, very tight camera framing) are untested at scale.
+- Some defect patches near the panel's curved edge can render with their
+  UV-mapped region extending slightly past the visible silhouette due to the
+  Bend modifier's geometry — a minor cosmetic artifact affecting a small
+  fraction of patches near the fold, not a mask-alignment bug.
 - Glare/motion-blur are cheap numpy approximations (brightness boost /
   BlenderProc's built-in motion blur setting), not full compositor effects.
-- Background clutter objects are untextured primitives, and can render
-  slightly off the panel's visible silhouette depending on camera angle —
-  good enough for domain randomization, not meant to look realistic on
-  their own.

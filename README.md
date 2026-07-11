@@ -8,6 +8,16 @@ evaluation. It's modeled on the perception stack an aerospace surface-prep
 robot (defect/scratch/corrosion detection ahead of sanding) would actually
 need, using only free compute (BlenderProc + local CPU, Colab, Kaggle).
 
+Real BlenderProc renders — panel, procedural defects, and the pixel-perfect
+ground-truth mask, all from `data_gen/`:
+
+![sample 1](results/samples/comparison_1.png)
+![sample 2](results/samples/comparison_2.png)
+
+More examples in [`results/samples/`](results/samples/). See
+[`data_gen/README.md`](data_gen/README.md) for the 9 real bugs found and
+fixed to get these renders correct.
+
 ## Architecture
 
 ```mermaid
@@ -52,7 +62,7 @@ so every stage is independently verifiable without a GPU:
 
 | Phase | What it does | Verified how |
 |---|---|---|
-| [`data_gen/`](data_gen/) | BlenderProc synthetic panel-defect dataset, domain randomization, pixel-perfect masks via two-pass rendering | CPU smoke tests (`FakeRenderer`) **and** verified against real Blender 4.2.1 — found and fixed 6 real bugs, then numerically confirmed mask/RGB pixel alignment on an actual render (see `data_gen/README.md`). Only a couple of preview images rendered, not the full dataset. |
+| [`data_gen/`](data_gen/) | BlenderProc synthetic panel-defect dataset, domain randomization, pixel-perfect masks via two-pass rendering | CPU smoke tests (`FakeRenderer`) **and** verified against real Blender 4.2.1 — found and fixed 9 real bugs across several rounds of actually rendering and inspecting output, then confirmed mask/RGB alignment both numerically and visually on 16 real renders (4 committed at `results/samples/`, see `data_gen/README.md`). Only rendered in small batches, not the full 2,000-3,000 image dataset. |
 | [`training/`](training/) | DeepLabV3-MobileNetV3 + from-scratch U-Net, single-GPU and 2-GPU DDP | Real forward/backward passes + short CPU training runs; DDP data sharding and gradient sync verified directly (see commit history for a real deadlock bug found and fixed via CI) |
 | [`optimization/`](optimization/) | ONNX export, ORT INT8 (dynamic+static), OpenVINO FP16/INT8, TensorRT FP16/INT8 (Colab), unified benchmark harness | Full chain (train → export → quantize → convert → benchmark) run end-to-end locally; TensorRT notebook untested (no local GPU) |
 | [`ros2_ws/`](ros2_ws/) + [`sim/`](sim/) | rclpy inference node + rclcpp noise-filtering node, Gazebo world, one-command `docker compose up` | CI runs a real `docker build` (colcon build, including the C++ node) on every push; the simulation itself (Gazebo/rviz2 GUI) untested — no display/GPU in CI or dev environment |
@@ -121,15 +131,22 @@ not end-to-end. Rather than hide that, here's exactly what's real and what
 isn't:
 
 - **BlenderProc has been verified against real Blender, but only at small
-  scale.** A couple of preview images were actually rendered with Blender
-  4.2.1 — not just written against the documented API — which surfaced and
-  fixed 6 real bugs (wrong enum strings, a broken RGBA conversion, a
-  material API misuse, a `bproc.init()` lifecycle bug, and an emission
-  texture too dim to survive tone-mapping; see `data_gen/README.md` for the
-  full list). Mask/RGB pixel alignment was confirmed numerically on the
-  fixed render. What's still unverified: a full 2,000-3,000 image dataset
-  run, and most of the domain-randomization space (HDRI lighting, extreme
-  angles, glare) at scale.
+  scale.** Several batches of preview images (up to 16 at a time) were
+  actually rendered with Blender 4.2.1 — not just written against the
+  documented API — which surfaced and fixed 9 real bugs across a few rounds
+  of rendering and inspecting the actual pixels (wrong enum strings, a
+  broken RGBA conversion, a material API misuse, a `bproc.init()` lifecycle
+  bug, an emission texture too dim to survive tone-mapping, a global
+  output-registry collision between the two render passes, a specular
+  highlight misclassified as a defect, and clutter objects leaking into the
+  mask; see `data_gen/README.md` for the full list). The two most subtle
+  bugs (the specular highlight and the clutter leak) only showed up when
+  visually inspecting mask overlays, not from pixel-count checks alone —
+  worth remembering before trusting any single verification method. Mask/RGB
+  alignment was confirmed both numerically and visually on the fixed
+  renders; 4 examples are committed at `results/samples/`. What's still
+  unverified: a full 2,000-3,000 image dataset run, and most of the
+  domain-randomization space (HDRI lighting, extreme angles, glare) at scale.
 - **No real GPU training has happened.** Both models are verified with
   real forward/backward passes and a couple of CPU epochs on a
   16-image toy dataset (see `tests/test_training_smoke.py`) — loss

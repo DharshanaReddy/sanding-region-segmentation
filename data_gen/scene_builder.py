@@ -64,12 +64,24 @@ class BlenderProcRenderer:
         # --- Pass 1: beauty (RGB) ---
         self._apply_pbr_material(bproc, panel, params, color_tex)
         self._setup_lighting(bproc, params)
-        if params.background_clutter_count:
-            self._spawn_background_clutter(bproc, params)
+        clutter_objects = self._spawn_background_clutter(bproc, params) if params.background_clutter_count else []
 
         bproc.renderer.set_max_amount_of_samples(64)
         bproc.renderer.enable_motion_blur(params.motion_blur_strength) if params.motion_blur_enabled else None
-        beauty = bproc.renderer.render()
+        # BlenderProc registers every render() call's output (key + file path)
+        # in a *global* list that is never cleared by bproc.clean_up() and
+        # persists across the whole script run, not just this frame. If more
+        # than one output is registered when render() runs, Blender renders
+        # ALL of them together in a single pass — which silently breaks our
+        # two-pass technique, since pass 2 needs different scene materials
+        # than pass 1, not a simultaneous render of both. Confirmed the hard
+        # way: without clearing this before *every* render() call, some
+        # frames returned stale/mismatched pixel data (masks with huge,
+        # brighter-than-panel "defect" regions unrelated to the actual small
+        # procedural patches), and eventually a hard FileNotFoundError once
+        # enough registrations had piled up across images.
+        self._reset_registered_render_outputs(bproc)
+        beauty = bproc.renderer.render(file_prefix="beauty_", output_key="colors")
         rgb = np.array(beauty["colors"][0])[:, :, :3].astype(np.float32)
 
         if params.sensor_noise_std > 0:
@@ -78,12 +90,34 @@ class BlenderProcRenderer:
             rgb = self._add_glare(rgb, params.glare_strength)
 
         # --- Pass 2: label (ground-truth mask), same camera/geometry/UVs ---
+        # Clutter objects are scene dressing for the beauty pass only — they
+        # aren't the panel and must never show up as PANEL or DEFECT class.
+        # Confirmed the hard way: left visible, they still carry Blender's
+        # default material's specular response, which the lingering lights
+        # (see the comment on _apply_emission_mask_material) light up into a
+        # bright highlight that gets misclassified as DEFECT. Hiding them
+        # from this render entirely is simpler and more robust than trying
+        # to zero out a material we didn't even assign them.
+        for obj in clutter_objects:
+            obj.blender_obj.hide_render = True
+
         self._apply_emission_mask_material(bproc, panel, mask_tex)
         bproc.renderer.set_max_amount_of_samples(1)  # unlit, no need for path tracing quality
-        label = bproc.renderer.render()
-        mask = np.array(label["colors"][0])[:, :, 0]  # single emission channel
+        self._reset_registered_render_outputs(bproc)
+        label = bproc.renderer.render(file_prefix="label_", output_key="label_colors")
+        mask = np.array(label["label_colors"][0])[:, :, 0]  # single emission channel
 
         self._save_outputs(rgb, mask, params, image_path, mask_path)
+
+    @staticmethod
+    def _reset_registered_render_outputs(bproc) -> None:
+        """Clears BlenderProc's global render-output registry (see the long
+        comment above the first call site) so the next render() call only
+        renders the single output it's about to register, not everything
+        registered since the script started."""
+        from blenderproc.python.utility.GlobalStorage import GlobalStorage
+
+        GlobalStorage.set("output", [])
 
     # -- geometry -----------------------------------------------------------
     def _build_curved_panel(self, bproc, params: RandomizationParams):
@@ -156,6 +190,19 @@ class BlenderProcRenderer:
 
         mat = bproc.material.create("panel_mask_emission")
         mat.set_principled_shader_value("Base Color", (0.0, 0.0, 0.0, 1.0))  # no diffuse contribution
+        # The label pass's lights are the same ones _setup_lighting created
+        # for the beauty pass — clean_up() only runs once per *image*, not
+        # between the two passes, so they're still in the scene here. A
+        # Principled BSDF has a specular response independent of Base Color,
+        # so a black material still shows a bright specular highlight from
+        # those lights. Confirmed the hard way: a smooth, dome-shaped bright
+        # region (a classic specular highlight, not a defect) was getting
+        # misclassified as CLASS_DEFECT by _save_outputs' brightness
+        # threshold. Zeroing specular response and maxing roughness makes
+        # this material's output depend only on emission, regardless of
+        # whatever lights happen to still be in the scene.
+        mat.set_principled_shader_value("Specular IOR Level", 0.0)
+        mat.set_principled_shader_value("Roughness", 1.0)
         mat.set_principled_shader_value("Emission Strength", 1.0)
         mat.set_principled_shader_value("Emission Color", self._to_blender_image(bright_mask))
         panel.replace_materials(mat)
@@ -195,13 +242,16 @@ class BlenderProcRenderer:
                 light.set_energy(params.energy_watts)
                 light.set_color(self._kelvin_to_rgb(params.color_temp_kelvin))
 
-    def _spawn_background_clutter(self, bproc, params: RandomizationParams) -> None:
+    def _spawn_background_clutter(self, bproc, params: RandomizationParams) -> list:
+        objects = []
         for _ in range(params.background_clutter_count):
             obj = bproc.object.create_primitive(
                 np.random.choice(["CUBE", "CYLINDER", "SPHERE"]),
                 scale=np.random.uniform(0.05, 0.2, size=3),
             )
             obj.set_location(np.random.uniform(-1.0, 1.0, size=3) + [0, 0, -0.3])
+            objects.append(obj)
+        return objects
 
     @staticmethod
     def _kelvin_to_rgb(kelvin: float) -> tuple[float, float, float]:
