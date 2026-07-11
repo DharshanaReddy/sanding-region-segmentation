@@ -62,7 +62,7 @@ so every stage is independently verifiable without a GPU:
 
 | Phase | What it does | Verified how |
 |---|---|---|
-| [`data_gen/`](data_gen/) | BlenderProc synthetic panel-defect dataset, domain randomization, pixel-perfect masks via two-pass rendering | CPU smoke tests (`FakeRenderer`) **and** verified against real Blender 4.2.1 — found and fixed 9 real bugs across several rounds of actually rendering and inspecting output, then confirmed mask/RGB alignment both numerically and visually on 16 real renders (4 committed at `results/samples/`, see `data_gen/README.md`). Only rendered in small batches, not the full 2,000-3,000 image dataset. |
+| [`data_gen/`](data_gen/) | BlenderProc synthetic panel-defect dataset, domain randomization, pixel-perfect masks via two-pass rendering | CPU smoke tests (`FakeRenderer`) **and** verified against real Blender 4.2.1 — found and fixed 9 real bugs across several rounds of actually rendering and inspecting output. Confirmed mask/RGB alignment both numerically and visually (4 examples committed at `results/samples/`), then generated the **full 2,500-image dataset for real** (1GB, error-free, 80/10/10 split) — a sampled quality check across it (100 images) found no defect-fraction outliers matching any of the earlier bug patterns. The dataset itself isn't in git (too large), but generating it is no longer a hypothetical step. |
 | [`training/`](training/) | DeepLabV3-MobileNetV3 + from-scratch U-Net, single-GPU and 2-GPU DDP | Real forward/backward passes + short CPU training runs; DDP data sharding and gradient sync verified directly (see commit history for a real deadlock bug found and fixed via CI) |
 | [`optimization/`](optimization/) | ONNX export, ORT INT8 (dynamic+static), OpenVINO FP16/INT8, TensorRT FP16/INT8 (Colab), unified benchmark harness | Full chain (train → export → quantize → convert → benchmark) run end-to-end locally; TensorRT notebook untested (no local GPU) |
 | [`ros2_ws/`](ros2_ws/) + [`sim/`](sim/) | rclpy inference node + rclcpp noise-filtering node, Gazebo world, one-command `docker compose up` | CI runs a real `docker build` (colcon build, including the C++ node) on every push; the simulation itself (Gazebo/rviz2 GUI) untested — no display/GPU in CI or dev environment |
@@ -109,10 +109,14 @@ python -m evaluation.sim_to_real_gap --backend pytorch --checkpoint training/che
 
 ## Results
 
-Not filled in yet — every number in `results/benchmarks.md` and the plots
-below only exist after a real training run on a real GPU, which hasn't
-happened in this development environment (see
-[Limitations](#limitations--honest-gaps)). Once you've run steps 2-3 above:
+**Data generation is real** — see the samples near the top of this README
+and the full set at [`results/samples/`](results/samples/). The full
+2,500-image dataset has also been generated (not committed here, 1GB — see
+[Limitations](#limitations--honest-gaps)).
+
+**Training, benchmarking, and evaluation numbers are not filled in yet** —
+they need a real training run on a real GPU, which hasn't happened in this
+development environment. Once that's done:
 
 - `results/benchmarks.md` — latency/FPS/memory/mIoU across all 6+
   inference backends, plus a one-line tradeoff summary.
@@ -130,23 +134,25 @@ so several things are verified only up to the point that hardware allowed,
 not end-to-end. Rather than hide that, here's exactly what's real and what
 isn't:
 
-- **BlenderProc has been verified against real Blender, but only at small
-  scale.** Several batches of preview images (up to 16 at a time) were
-  actually rendered with Blender 4.2.1 — not just written against the
-  documented API — which surfaced and fixed 9 real bugs across a few rounds
-  of rendering and inspecting the actual pixels (wrong enum strings, a
-  broken RGBA conversion, a material API misuse, a `bproc.init()` lifecycle
-  bug, an emission texture too dim to survive tone-mapping, a global
-  output-registry collision between the two render passes, a specular
-  highlight misclassified as a defect, and clutter objects leaking into the
-  mask; see `data_gen/README.md` for the full list). The two most subtle
-  bugs (the specular highlight and the clutter leak) only showed up when
-  visually inspecting mask overlays, not from pixel-count checks alone —
-  worth remembering before trusting any single verification method. Mask/RGB
-  alignment was confirmed both numerically and visually on the fixed
-  renders; 4 examples are committed at `results/samples/`. What's still
-  unverified: a full 2,000-3,000 image dataset run, and most of the
-  domain-randomization space (HDRI lighting, extreme angles, glare) at scale.
+- **BlenderProc has been verified against real Blender, including a full
+  2,500-image run.** Several batches of preview images (up to 16 at a time)
+  were actually rendered with Blender 4.2.1 first — not just written
+  against the documented API — which surfaced and fixed 9 real bugs across
+  a few rounds of rendering and inspecting the actual pixels (wrong enum
+  strings, a broken RGBA conversion, a material API misuse, a
+  `bproc.init()` lifecycle bug, an emission texture too dim to survive
+  tone-mapping, a global output-registry collision between the two render
+  passes, a specular highlight misclassified as a defect, and clutter
+  objects leaking into the mask; see `data_gen/README.md` for the full
+  list). The two most subtle bugs (the specular highlight and the clutter
+  leak) only showed up when visually inspecting mask overlays, not from
+  pixel-count checks alone. After all fixes, the full 2,500-image dataset
+  (80/10/10 split) was generated for real — error-free, and a sampled
+  quality check (100 images) found no defect-fraction outliers matching any
+  earlier bug pattern. Not yet explored: most of the domain-randomization
+  space at scale (very low light, very tight camera framing) — the
+  generated dataset hasn't been manually reviewed image-by-image, only
+  statistically sampled.
 - **No real GPU training has happened.** Both models are verified with
   real forward/backward passes and a couple of CPU epochs on a
   16-image toy dataset (see `tests/test_training_smoke.py`) — loss
